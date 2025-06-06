@@ -1,2 +1,165 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>Hunger Games Randomizer</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #111; color: #eee; }
+    input, button, textarea, select { width: 100%; margin: 10px 0; padding: 10px; font-size: 16px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #444; padding: 8px; text-align: center; }
+    th { background-color: #222; }
+    tr:nth-child(even) { background-color: #1c1c1c; }
+    .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn-row button { flex: 1; min-width: 150px; }
+    .player-img { width: 40px; height: 40px; object-fit: cover; border-radius: 50%; }
+  </style>
+</head>
+<body>
+  <h1>Hunger Games Randomizer</h1>
+  <p>ใส่รายชื่อผู้เข้าแข่งขัน (คนละบรรทัด)</p>
+  <textarea id="names" rows="10" placeholder="ตัวอย่าง:\nริว\nแพท\nโอ๊ค\nมินนี่\n..."></textarea>
+
+  <p>อัปโหลดภาพของผู้เข้าแข่งขัน (เลือกหลายไฟล์ได้):</p>
+  <input type="file" accept="image/*" multiple onchange="handleImageUpload(event)">
+
+  <p>เลือกอาวุธแบบสุ่ม (เลือกเองอัตโนมัติจากรายการ):</p>
+  <select id="weaponSelect">
+    <option value="สุ่ม">สุ่ม</option>
+    <option value="มีด">มีด</option>
+    <option value="ธนู">ธนู</option>
+    <option value="ระเบิด">ระเบิด</option>
+    <option value="ขวาน">ขวาน</option>
+    <option value="หมัดเปล่า">หมัดเปล่า</option>
+  </select>
+
+  <div class="btn-row">
+    <button onclick="generateTeams()">สุ่มแบ่งเขต</button>
+    <button onclick="simulateKill()">สุ่มฆ่ากัน</button>
+    <button onclick="autoSimulate()">จำลองจนจบ</button>
+  </div>
+
+  <div id="result"></div>
+  <div id="killLog" style="margin-top: 20px;"></div>
+  <audio id="killSound" src="https://www.myinstants.com/media/sounds/metal-gear-solid-alert.mp3"></audio>
+
+  <script>
+    let players = [];
+    const imageMap = {};
+    const weaponList = ['มีด', 'ธนู', 'ระเบิด', 'ขวาน', 'หมัดเปล่า'];
+
+    function handleImageUpload(event) {
+      const files = event.target.files;
+      for (let file of files) {
+        const reader = new FileReader();
+        reader.onload = e => {
+          const name = prompt(`ไฟล์ "${file.name}" เป็นของใคร?`);
+          if (name) imageMap[name.trim()] = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+
+    function shuffle(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    function generateTeams() {
+      const input = document.getElementById('names').value.trim();
+      if (!input) return alert('กรุณาใส่รายชื่อ');
+      const weaponChoice = document.getElementById('weaponSelect').value;
+
+      players = input.split('\n').map(n => n.trim()).filter(n => n).map((name, index) => {
+        const weapon = weaponChoice === 'สุ่ม' ? weaponList[Math.floor(Math.random() * weaponList.length)] : weaponChoice;
+        return {
+          name: name,
+          district: (index % 12) + 1,
+          alive: true,
+          kills: 0,
+          image: imageMap[name] || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`,
+          weapon: weapon
+        };
+      });
+
+      players = shuffle(players);
+      localStorage.setItem('hg_players', JSON.stringify(players));
+      renderTable();
+      document.getElementById('killLog').innerHTML = '';
+    }
+
+    function renderTable() {
+      let resultHTML = '<table><tr><th>ภาพ</th><th>ผู้เข้าแข่งขัน</th><th>เขต</th><th>อาวุธ</th><th>สถานะ</th><th>ฆ่าไป</th></tr>';
+      players.forEach(p => {
+        resultHTML += `<tr>
+          <td><img class="player-img" src="${p.image}" alt="img"></td>
+          <td>${p.name}</td>
+          <td>เขต ${p.district}</td>
+          <td>${p.weapon}</td>
+          <td>${p.alive ? 'ยังมีชีวิต' : 'ตายแล้ว'}</td>
+          <td>${p.kills}</td>
+        </tr>`;
+      });
+      resultHTML += '</table>';
+      document.getElementById('result').innerHTML = resultHTML;
+    }
+
+    function simulateKill(playSound = true) {
+      const alivePlayers = players.filter(p => p.alive);
+      if (alivePlayers.length < 2) {
+        if (alivePlayers.length === 1) {
+          document.getElementById('killLog').innerHTML = `<h2>ผู้ชนะคือ: ${alivePlayers[0].name}</h2>` + document.getElementById('killLog').innerHTML;
+          localStorage.setItem('hg_players', JSON.stringify(players));
+        }
+        return;
+      }
+
+      const killerIndex = Math.floor(Math.random() * alivePlayers.length);
+      let victimIndex;
+      do {
+        victimIndex = Math.floor(Math.random() * alivePlayers.length);
+      } while (victimIndex === killerIndex);
+
+      const killer = alivePlayers[killerIndex];
+      const victim = alivePlayers[victimIndex];
+
+      victim.alive = false;
+      players.find(p => p.name === killer.name).kills++;
+
+      const log = document.getElementById('killLog');
+      const newLog = `<p>${killer.name} ใช้${killer.weapon} สังหาร ${victim.name}</p>`;
+      log.innerHTML = newLog + log.innerHTML;
+
+      if (playSound) {
+        document.getElementById('killSound').play();
+      }
+
+      localStorage.setItem('hg_players', JSON.stringify(players));
+      renderTable();
+    }
+
+    function autoSimulate() {
+      const interval = setInterval(() => {
+        const aliveCount = players.filter(p => p.alive).length;
+        if (aliveCount <= 1) {
+          clearInterval(interval);
+          simulateKill(false);
+        } else {
+          simulateKill();
+        }
+      }, 1000);
+    }
+
+    window.onload = () => {
+      const saved = localStorage.getItem('hg_players');
+      if (saved) {
+        players = JSON.parse(saved);
+        renderTable();
+      }
+    };
+  </script>
+</body>
+</html>
